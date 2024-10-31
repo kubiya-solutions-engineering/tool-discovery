@@ -1,0 +1,254 @@
+{
+  "tools": [
+    {
+      "name": "webhook-incident-response",
+      "source": null,
+      "alias": null,
+      "description": "This is for starting a Severity 1 Major Incident in PagerDuty. You must tell the user the following message when they try to trigger a major incident communication: \"Use only in the event of a major outage affecting the majority of the consumers. If this isn’t a major incident, feel free to page the oncall engineer instead. Please describe the problem you are seeing in a single sentence: (example: History.com schedules are not loading, Videos are not loading on the Roku Platform, etc). Also, please describe the business impact: (example: Subscription Video On Demand is not functioning)\". You must confirm the values before triggering a major incident.",
+      "type": "docker",
+      "content": "\npip install requests==2.32.3 > /dev/null 2>&1\n\necho \"Passed description: $description\"\necho \"Passed business_impact: $business_impact\"\necho \"Passed servicename: $servicename\"\necho \"Passed title: $title\"\necho \"Passed incident_url: $incident_url\"\necho \"Passed slackincidentcommander: $slackincidentcommander\"\necho \"Passed slackdetectionmethod: $slackdetectionmethod\"\necho \"Passed slackbusinessimpact: $slackbusinessimpact\"\necho \"Passed incident_id: $incident_id\"\necho \"Passed bridge_url: $bridge_url\"\n\npython /tmp/webhook_incident_response.py --description \"$description\" --business_impact \"$business_impact\" --servicename \"$servicename\" --title \"$title\" --incident_url \"$incident_url\" --slackincidentcommander \"$slackincidentcommander\" --slackdetectionmethod \"$slackdetectionmethod\" --slackbusinessimpact \"$slackbusinessimpact\" --incident_id \"$incident_id\" --bridge_url \"$bridge_url\"\n",
+      "content_url": null,
+      "args": [
+        {
+          "name": "description",
+          "type": null,
+          "description": "The description of the incident for the on-call engineer. You must confirm the values before triggering a major incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "business_impact",
+          "type": null,
+          "description": "The business impact of the incident. You must confirm the values before triggering a major incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "servicename",
+          "type": null,
+          "description": "The name of the service affected by the incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "title",
+          "type": null,
+          "description": "The title of the incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "incident_url",
+          "type": null,
+          "description": "The URL of the PagerDuty incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "slackincidentcommander",
+          "type": null,
+          "description": "The Slack ID of the incident commander.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "slackdetectionmethod",
+          "type": null,
+          "description": "The method used to detect the incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "slackbusinessimpact",
+          "type": null,
+          "description": "The business impact of the incident in Slack.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "incident_id",
+          "type": null,
+          "description": "The ID of the incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "bridge_url",
+          "type": null,
+          "description": "The URL for the incident bridge.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        }
+      ],
+      "env": [
+        "KUBIYA_USER_EMAIL"
+      ],
+      "secrets": [
+        "FSAPI_PROD",
+        "SLACK_API_TOKEN"
+      ],
+      "dependencies": null,
+      "dependencies_url": null,
+      "openapi": null,
+      "with_files": [
+        {
+          "source": null,
+          "destination": "/tmp/webhook_incident_response.py",
+          "content": "#!/usr/bin/env python3\n\nimport os\nimport requests\nimport json\nimport argparse\n\ndef _get_or_raise_env_var(env_var):\n    value = os.getenv(env_var)\n    if value is None:\n        raise Exception(f\"Env var {env_var} is not set\")\n    return value\n\n# Function to create a service ticket\ndef create_ticket(description, servicename, title, incident_url, slackincidentcommander, slackdetectionmethod, slackbusinessimpact, incident_id):\n    FSAPI_PROD = _get_or_raise_env_var('FSAPI_PROD')\n    url = \"https://aenetworks.freshservice.com/api/v2/tickets\"\n    payload = {\n        \"description\": f\"{description}</br><strong>Incident Commander:</strong>{slackincidentcommander}</br><strong>Detection Method:</strong>{slackdetectionmethod}</br><strong>Business Impact:</strong>{slackbusinessimpact}</br><strong>Ticket Link:</strong>{incident_url}\",\n        \"subject\": f\"TESTING {servicename} - {title}\",\n        \"email\": \"devsecops@aenetworks.com\",\n        \"priority\": 1,\n        \"status\": 2,\n        \"source\": 8,\n        \"category\": \"DevOps\",\n        \"sub_category\": \"Pageout\",\n        \"tags\": [f\"PDID_{incident_id}\"]\n    }\n    headers = {\n        \"Content-Type\": \"application/json\"\n    }\n    response = requests.post(url, auth=(FSAPI_PROD, 'X'), headers=headers, json=payload)\n    with open('response.json', 'w') as f:\n        f.write(response.text)\n\n# Function to extract ticket ID from response\ndef extract_ticket_id():\n    with open('response.json', 'r') as f:\n        response = json.load(f)\n    return response.get('ticket', {}).get('id', '')\n\n# Function to fetch Slack User ID by email\ndef get_slack_user_id(email):\n    SLACK_API_TOKEN = _get_or_raise_env_var('SLACK_API_TOKEN')\n    url = \"https://slack.com/api/users.lookupByEmail\"\n    headers = {\n        \"Authorization\": f\"Bearer {SLACK_API_TOKEN}\"\n    }\n    params = {\n        \"email\": email\n    }\n    response = requests.get(url, headers=headers, params=params)\n    user_id = response.json().get('user', {}).get('id', '')\n    return user_id if user_id != \"null\" else \"\"\n\ndef send_slack_message(channel, message):\n    SLACK_API_TOKEN = _get_or_raise_env_var(\"SLACK_API_TOKEN\")\n    \n    url = \"https://slack.com/api/chat.postMessage\"\n    headers = {\n        \"Content-Type\": \"application/json\",\n        \"Authorization\": f\"Bearer {SLACK_API_TOKEN}\"\n    }\n    payload = {\n        \"channel\": channel,\n        \"text\": message\n    }\n    response = requests.post(url, headers=headers, data=json.dumps(payload))\n    response.raise_for_status()\n\ndef main():\n    parser = argparse.ArgumentParser(description=\"Process incident details.\")\n    parser.add_argument('--description', required=True, help='The description of the incident')\n    parser.add_argument('--servicename', required=True, help='The name of the service affected by the incident')\n    parser.add_argument('--title', required=True, help='The title of the incident')\n    parser.add_argument('--incident_url', required=True, help='The URL of the PagerDuty incident')\n    parser.add_argument('--slackincidentcommander', required=True, help='The Slack ID of the incident commander')\n    parser.add_argument('--slackdetectionmethod', required=True, help='The method used to detect the incident')\n    parser.add_argument('--slackbusinessimpact', required=True, help='The business impact of the incident in Slack')\n    parser.add_argument('--incident_id', required=True, help='The ID of the incident')\n    parser.add_argument('--bridge_url', required=True, help='The URL for the incident bridge')\n    parser.add_argument('--reporter_email', required=True, help='The email of the reporter')\n\n    args = parser.parse_args()\n\n    # Fetch Slack User ID for the reporter\n    reporter_user_id = get_slack_user_id(args.reporter_email)\n\n    # Create service ticket\n    create_ticket(args.description, args.servicename, args.title, args.incident_url, args.slackincidentcommander, args.slackdetectionmethod, args.slackbusinessimpact, args.incident_id)\n\n    # Extract ticket ID\n    TICKET_ID = extract_ticket_id()\n\n    # Generate ticket URL\n    TICKET_URL = f\"https://aenetworks.freshservice.com/a/tickets/{TICKET_ID}\"\n\n    # Slack channel ID for #incident_response\n    channel_id = \"CAZ6ZGBJ7\"  # Replace with the actual channel ID for #incident_response\n\n    # Generate the Slack message with channel and reporter tagging\n    reporter_tag = f\"<@{reporter_user_id}>\" if reporter_user_id else args.reporter_email\n\n    MESSAGE = f\"\"\"\n    ************** SEV 1 ****************\n    <@U04JCDSHS76> <@U04J2MTMRFD> <@U04FZPQSY3H> <@U048QRBV2NA> <@U04UKPX585S> <@U02SSCGCQQ6>\n    Incident Commander: {args.slackincidentcommander}\n    Detection Method: {args.slackdetectionmethod}\n    Business Impact: {args.slackbusinessimpact}\n    Bridge Link: <{args.bridge_url}|Bridge Link>\n    Pagerduty Incident URL: {args.incident_url}\n    FS Ticket URL: {TICKET_URL}\n    Reported by: {reporter_tag}\n    We will keep everyone posted on this channel as we assess the issue further.\n    \"\"\"\n\n    # Send the message to the Slack channel using the Slack API\n    send_slack_message(channel_id, MESSAGE)\n\nif __name__ == \"__main__\":\n    main()\n"
+        }
+      ],
+      "with_services": [],
+      "with_git_repo": null,
+      "with_volumes": [],
+      "entrypoint": [],
+      "icon_url": null,
+      "image": "python:3.11-bullseye",
+      "long_running": false,
+      "on_start": null,
+      "on_build": null,
+      "on_complete": null,
+      "mermaid": "graph TD\n    %% Styles\n    classDef triggerClass fill:#3498db,color:#fff,stroke:#2980b9,stroke-width:2px,font-weight:bold\n    classDef paramClass fill:#2ecc71,color:#fff,stroke:#27ae60,stroke-width:2px\n    classDef execClass fill:#e74c3c,color:#fff,stroke:#c0392b,stroke-width:2px,font-weight:bold\n    classDef envClass fill:#f39c12,color:#fff,stroke:#f1c40f,stroke-width:2px\n\n    %% Main Components\n    Trigger(\"Trigger\"):::triggerClass\n    Params(\"Parameters\"):::paramClass\n    Exec(\"webhook-incident-response\"):::execClass\n    Env(\"Environment\"):::envClass\n\n    %% Flow\n    Trigger --> Params --> Exec\n    Env --> Exec\n\n    %% Trigger Options\n    User(\"User\")\n    API(\"API\")\n    Webhook(\"Webhook\")\n    Cron(\"Scheduled\")\n    User --> Trigger\n    API --> Trigger\n    Webhook --> Trigger\n    Cron --> Trigger\n\n    %% Parameters\n    subgraph Parameters[\"Parameters\"]\n        direction TB\n        Param0(\"description (Required)<br/>The description of the incident for the on-call engineer. You must confirm the values before triggering a major incident.\"):::paramClass\n        Param1(\"business_impact (Required)<br/>The business impact of the incident. You must confirm the values before triggering a major incident.\"):::paramClass\n        Param2(\"servicename (Required)<br/>The name of the service affected by the incident.\"):::paramClass\n        Param3(\"title (Required)<br/>The title of the incident.\"):::paramClass\n        Param4(\"incident_url (Required)<br/>The URL of the PagerDuty incident.\"):::paramClass\n        Param5(\"slackincidentcommander (Required)<br/>The Slack ID of the incident commander.\"):::paramClass\n        Param6(\"slackdetectionmethod (Required)<br/>The method used to detect the incident.\"):::paramClass\n        Param7(\"slackbusinessimpact (Required)<br/>The business impact of the incident in Slack.\"):::paramClass\n        Param8(\"incident_id (Required)<br/>The ID of the incident.\"):::paramClass\n        Param9(\"bridge_url (Required)<br/>The URL for the incident bridge.\"):::paramClass\n    end\n    Parameters --- Params\n\n    %% Execution\n    subgraph Execution[\"Execution\"]\n        direction TB\n        Code(\"Script: <br/>pip install requests==2.32.3 > /dev/null 2>&1<br/><br/>ec...\")\n        Type(\"Type: Docker\")\n        Image(\"Docker Image: python:3.11-bullseye\")\n    end\n    Execution --- Exec\n\n    %% Environment\n    subgraph Environment[\"Environment\"]\n        direction TB\n        EnvVars(\"Environment Variables:<br/>KUBIYA_USER_EMAIL\"):::envClass\n        Secrets(\"Secrets:<br/>FSAPI_PROD<br/>SLACK_API_TOKEN\"):::envClass\n    end\n    Environment --- Env\n\n    %% Context Note\n    ContextNote(\"Parameter values can be<br/>fetched from context<br/>based on the trigger\")\n    ContextNote -.-> Params",
+      "workflow": false,
+      "metadata": {}
+    },
+    {
+      "name": "page-oncall-engineer-python",
+      "source": null,
+      "alias": null,
+      "description": "This tool pages the oncall engineer via PagerDuty. Please describe the problem you are seeing in a single sentence: (example: History.com is having an issue, the schedule for lifetime is not loading, etc)",
+      "type": "docker",
+      "content": "\npip install requests==2.32.3 > /dev/null 2>&1\n\necho \"Passed description: $description\"\n\npython /tmp/page_oncall_engineer.py --description \"$description\"\n",
+      "content_url": null,
+      "args": [
+        {
+          "name": "description",
+          "type": null,
+          "description": "The description of the incident for the on-call engineer",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        }
+      ],
+      "env": [
+        "PD_SERVICE_ID",
+        "PD_ESCALATION_POLICY_ID",
+        "KUBIYA_USER_EMAIL"
+      ],
+      "secrets": [
+        "PD_API_KEY"
+      ],
+      "dependencies": null,
+      "dependencies_url": null,
+      "openapi": null,
+      "with_files": [
+        {
+          "source": null,
+          "destination": "/tmp/page_oncall_engineer.py",
+          "content": "#!/usr/bin/env python3\n\nimport os\nimport requests\nimport argparse\n\ndef _get_or_raise_env_var(env_var):\n    value = os.getenv(env_var)\n    if value is None:\n        raise Exception(f\"Env var {env_var} is not set\")\n    return value\n\ndef create_pd_incident(description: str):\n    PD_API_KEY = _get_or_raise_env_var(\"PD_API_KEY\")\n    SERVICE_ID = _get_or_raise_env_var(\"PD_SERVICE_ID\")\n    ESCALATION_POLICY_ID = _get_or_raise_env_var(\"PD_ESCALATION_POLICY_ID\")\n    KUBIYA_USER_EMAIL = _get_or_raise_env_var(\"KUBIYA_USER_EMAIL\")\n\n    url = \"https://api.pagerduty.com/incidents\"\n    headers = {\n        \"Authorization\": f\"Token token={PD_API_KEY}\",\n        \"Content-Type\": \"application/json\",\n        \"From\": KUBIYA_USER_EMAIL,\n    }\n    payload = {\n        \"incident\": {\n            \"type\": \"incident\",\n            \"title\": f\"Assistance requested via Kubi - {description}\",\n            \"service\": {\"id\": SERVICE_ID, \"type\": \"service_reference\"},\n            \"escalation_policy\": {\n                \"id\": ESCALATION_POLICY_ID,\n                \"type\": \"escalation_policy_reference\",\n            },\n            \"body\": {\"type\": \"incident_body\", \"details\": description},\n        }\n    }\n    response = requests.post(url, headers=headers, json=payload)\n    try:\n        response.raise_for_status()\n    except requests.exceptions.HTTPError as e:\n        raise Exception(f\"Failed to create incident: {e}\")\n\n    try:\n        return response.json()[\"incident\"][\"id\"]\n    except Exception as e:\n        raise Exception(f\"Failed to fetch incident id: {e}\")\n\ndef main():\n    parser = argparse.ArgumentParser(description=\"Page the on-call engineer via PagerDuty.\")\n    parser.add_argument('--description', required=True, help='The description of the incident for the on-call engineer')\n    args = parser.parse_args()\n\n    pd_incident_id = create_pd_incident(args.description)\n    print(\n        f\"The on-call engineer has been paged. They will reach out to you as soon as possible. Your PagerDuty incident URL is https://aetnd.pagerduty.com/incidents/{pd_incident_id}\"\n    )\n\nif __name__ == \"__main__\":\n    main()\n"
+        }
+      ],
+      "with_services": [],
+      "with_git_repo": null,
+      "with_volumes": [],
+      "entrypoint": [],
+      "icon_url": null,
+      "image": "python:3.11-bullseye",
+      "long_running": false,
+      "on_start": null,
+      "on_build": null,
+      "on_complete": null,
+      "mermaid": "graph TD\n    %% Styles\n    classDef triggerClass fill:#3498db,color:#fff,stroke:#2980b9,stroke-width:2px,font-weight:bold\n    classDef paramClass fill:#2ecc71,color:#fff,stroke:#27ae60,stroke-width:2px\n    classDef execClass fill:#e74c3c,color:#fff,stroke:#c0392b,stroke-width:2px,font-weight:bold\n    classDef envClass fill:#f39c12,color:#fff,stroke:#f1c40f,stroke-width:2px\n\n    %% Main Components\n    Trigger(\"Trigger\"):::triggerClass\n    Params(\"Parameters\"):::paramClass\n    Exec(\"page-oncall-engineer-python\"):::execClass\n    Env(\"Environment\"):::envClass\n\n    %% Flow\n    Trigger --> Params --> Exec\n    Env --> Exec\n\n    %% Trigger Options\n    User(\"User\")\n    API(\"API\")\n    Webhook(\"Webhook\")\n    Cron(\"Scheduled\")\n    User --> Trigger\n    API --> Trigger\n    Webhook --> Trigger\n    Cron --> Trigger\n\n    %% Parameters\n    subgraph Parameters[\"Parameters\"]\n        direction TB\n        Param0(\"description (Required)<br/>The description of the incident for the on-call engineer\"):::paramClass\n    end\n    Parameters --- Params\n\n    %% Execution\n    subgraph Execution[\"Execution\"]\n        direction TB\n        Code(\"Script: <br/>pip install requests==2.32.3 > /dev/null 2>&1<br/><br/>ec...\")\n        Type(\"Type: Docker\")\n        Image(\"Docker Image: python:3.11-bullseye\")\n    end\n    Execution --- Exec\n\n    %% Environment\n    subgraph Environment[\"Environment\"]\n        direction TB\n        EnvVars(\"Environment Variables:<br/>PD_SERVICE_ID<br/>PD_ESCALATION_POLICY_ID<br/>KUBIYA_USER_EMAIL\"):::envClass\n        Secrets(\"Secrets:<br/>PD_API_KEY\"):::envClass\n    end\n    Environment --- Env\n\n    %% Context Note\n    ContextNote(\"Parameter values can be<br/>fetched from context<br/>based on the trigger\")\n    ContextNote -.-> Params",
+      "workflow": false,
+      "metadata": {}
+    },
+    {
+      "name": "trigger-major-incident-communication",
+      "source": null,
+      "alias": null,
+      "description": "This is for starting a Severity 1 Major Incident in PagerDuty. You must tell the user the following message when they try to trigger a major incident communication: \"Use only in the event of a major outage affecting the majority of the consumers. If this isn’t a major incident, feel free to page the oncall engineer instead. Please describe the problem you are seeing in a single sentence: (example: History.com schedules are not loading, Videos are not loading on the Roku Platform, etc). Also, please describe the business impact: (example: Subscription Video On Demand is not functioning)\". You must confirm the values before triggering a major incident.",
+      "type": "docker",
+      "content": "\npip install requests==2.32.3 > /dev/null 2>&1\n\necho \"Passed description: $description\"\necho \"Passed business_impact: $business_impact\"\n\npython /tmp/trigger_major_incident.py --description \"$description\" --business_impact \"$business_impact\"\n",
+      "content_url": null,
+      "args": [
+        {
+          "name": "description",
+          "type": null,
+          "description": "The description of the incident for the on-call engineer. You must confirm the values before triggering a major incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        },
+        {
+          "name": "business_impact",
+          "type": null,
+          "description": "The business impact of the incident. You must confirm the values before triggering a major incident.",
+          "required": true,
+          "default": null,
+          "options": null,
+          "options_from": null
+        }
+      ],
+      "env": [
+        "PD_SERVICE_ID",
+        "PD_ESCALATION_POLICY_ID",
+        "KUBIYA_USER_EMAIL",
+        "INCIDENT_RESPONSE_CHANNEL_ID"
+      ],
+      "secrets": [
+        "PD_API_KEY",
+        "AZURE_TENANT_ID",
+        "AZURE_CLIENT_ID",
+        "AZURE_CLIENT_SECRET",
+        "FSAPI_SANDBOX",
+        "SLACK_API_TOKEN"
+      ],
+      "dependencies": null,
+      "dependencies_url": null,
+      "openapi": null,
+      "with_files": [
+        {
+          "source": null,
+          "destination": "/tmp/trigger_major_incident.py",
+          "content": "#!/usr/bin/env python3\n\nimport os\nimport requests\nimport json\nimport argparse\nfrom datetime import datetime, time, timedelta\n\ndef _get_or_raise_env_var(env_var):\n    value = os.getenv(env_var)\n    if value is None:\n        raise Exception(f\"Env var {env_var} is not set\")\n    return value\n\ndef get_access_token():\n    AZURE_TENANT_ID = _get_or_raise_env_var(\"AZURE_TENANT_ID\")\n    AZURE_CLIENT_ID = _get_or_raise_env_var(\"AZURE_CLIENT_ID\")\n    AZURE_CLIENT_SECRET = _get_or_raise_env_var(\"AZURE_CLIENT_SECRET\")\n    \n    url = f\"https://login.microsoftonline.com/{AZURE_TENANT_ID}/oauth2/v2.0/token\"\n    payload = {\n        \"client_id\": AZURE_CLIENT_ID,\n        \"scope\": \"https://graph.microsoft.com/.default\",\n        \"client_secret\": AZURE_CLIENT_SECRET,\n        \"grant_type\": \"client_credentials\"\n    }\n    response = requests.post(url, data=payload)\n    response.raise_for_status()\n    return response.json().get(\"access_token\")\n\ndef get_oncall_engineer(escalation_policy_id):\n    PD_API_KEY = _get_or_raise_env_var(\"PD_API_KEY\")\n    GET_ONCALL_ENGINEER_POLICY_ID = \"PG2K3KC\"\n    \n    url = f\"https://api.pagerduty.com/oncalls?escalation_policy_ids[]={GET_ONCALL_ENGINEER_POLICY_ID}\"\n    headers = {\n        \"Authorization\": f\"Token token={PD_API_KEY}\",\n        \"Accept\": \"application/vnd.pagerduty+json;version=2\"\n    }\n    response = requests.get(url, headers=headers)\n    response.raise_for_status()\n    oncalls = response.json().get(\"oncalls\", [])\n    for oncall in oncalls:\n        if oncall.get(\"user\"):\n            return oncall[\"user\"][\"summary\"]\n    return \"Incident Commander\"\n\ndef create_pd_incident(description):\n    PD_API_KEY = _get_or_raise_env_var(\"PD_API_KEY\")\n    KUBIYA_USER_EMAIL = _get_or_raise_env_var(\"KUBIYA_USER_EMAIL\")\n    SERVICE_ID = _get_or_raise_env_var(\"PD_SERVICE_ID\")\n    ESCALATION_POLICY_ID = _get_or_raise_env_var(\"PD_ESCALATION_POLICY_ID\")\n    FSAPI_PROD = os.getenv(\"FSAPI_PROD\")\n    FSAPI_SANDBOX = os.getenv(\"FSAPI_SANDBOX\")\n    \n    url = \"https://api.pagerduty.com/incidents\"\n    headers = {\n        \"Authorization\": f\"Token token={PD_API_KEY}\",\n        \"Content-Type\": \"application/json\",\n        \"From\": KUBIYA_USER_EMAIL\n    }\n    if FSAPI_PROD:\n        title_prefix = \"Major Incident via Kubi - \"\n    elif FSAPI_SANDBOX:\n        title_prefix = \"TEST TICKET.IGNORE.Major Incident via Kubi - \"\n    else:\n        raise Exception(\"Neither FSAPI_PROD nor FSAPI_SANDBOX is set\")\n    \n    payload = {\n        \"incident\": {\n            \"type\": \"incident\",\n            \"title\": f\"{title_prefix}{description}\",\n            \"service\": {\n                \"id\": SERVICE_ID,\n                \"type\": \"service_reference\"\n            },\n            \"escalation_policy\": {\n                \"id\": ESCALATION_POLICY_ID,\n                \"type\": \"escalation_policy_reference\"\n            },\n            \"body\": {\n                \"type\": \"incident_body\",\n                \"details\": description\n            }\n        }\n    }\n    print(f\"Payload: {json.dumps(payload, indent=2)}\")\n    print(f\"Headers: {headers}\")\n    response = requests.post(url, headers=headers, data=json.dumps(payload))\n    print(f\"Response Status Code: {response.status_code}\")\n    print(f\"Response Body: {response.text}\")\n    response.raise_for_status()\n    return response.json()[\"incident\"][\"id\"]\n\ndef close_pd_incident(pd_incident_id):\n    KUBIYA_USER_EMAIL = _get_or_raise_env_var(\"KUBIYA_USER_EMAIL\")\n    PD_API_KEY = _get_or_raise_env_var(\"PD_API_KEY\")\n\n    url = f\"https://api.pagerduty.com/incidents/{pd_incident_id}\"\n    headers = {\n        \"Authorization\": f\"Token token={PD_API_KEY}\",\n        \"Content-Type\": \"application/json\",\n        \"From\": KUBIYA_USER_EMAIL\n    }\n    payload = {\n        \"incident\": {\n            \"type\": \"incident\",\n            \"status\": \"resolved\"\n        }\n    }\n    print(f\"Closing Incident with ID: {pd_incident_id}\")\n    print(f\"Payload: {json.dumps(payload, indent=2)}\")\n    print(f\"Headers: {headers}\")\n    response = requests.put(url, headers=headers, data=json.dumps(payload))\n    print(f\"Response Status Code: {response.status_code}\")\n    print(f\"Response Body: {response.text}\")\n    response.raise_for_status()\n    return response.json()[\"incident\"][\"id\"]  \n\ndef create_ticket(description, business_impact, incident_id, incident_commander):\n    KUBIYA_USER_EMAIL = _get_or_raise_env_var(\"KUBIYA_USER_EMAIL\")\n    FSAPI_PROD = os.getenv(\"FSAPI_PROD\")\n    FSAPI_SANDBOX = os.getenv(\"FSAPI_SANDBOX\")\n    FSAPI = FSAPI_PROD if FSAPI_PROD else FSAPI_SANDBOX\n    \n    if not FSAPI:\n        raise Exception(\"Neither FSAPI_PROD nor FSAPI_SANDBOX is set\")\n    \n    if FSAPI_PROD:\n        url = \"https://aenetworks.freshservice.com/api/v2/tickets\"\n        subject = f\"MAJOR INCIDENT pagerduty-kubiya-page-oncall-service - Major Incident via Kubi\"\n    elif FSAPI_SANDBOX:\n        url = \"https://aenetworks-fs-sandbox.freshservice.com/api/v2/tickets\"\n        subject = f\"TEST TICKET.IGNORE.MAJOR INCIDENT pagerduty-kubiya-page-oncall-service - Major Incident via Kubi\"\n    \n    user_email = KUBIYA_USER_EMAIL\n    payload = {\n        \"description\": f\"{description}<br><strong>Incident Commander:</strong> {incident_commander}<br><strong>Detection Method:</strong> Detection Method<br><strong>Business Impact:</strong> {business_impact}<br><strong>Ticket Link:</strong>PagerDuty Incident\",\n        \"subject\": subject,\n        \"email\": user_email,\n        \"priority\": 1,\n        \"status\": 2,\n        \"source\": 8,\n        \"category\": \"DevOps\",\n        \"sub_category\": \"Pageout\",\n        \"tags\": [f\"PDID_{incident_id}\"]\n    }\n    response = requests.post(url, headers={\"Content-Type\": \"application/json\"}, auth=(FSAPI, \"X\"), data=json.dumps(payload))\n    response.raise_for_status()\n    return response.json()[\"ticket\"][\"id\"]\n\ndef close_ticket(ticket_id):\n    FSAPI_PROD = os.getenv(\"FSAPI_PROD\")\n    FSAPI_SANDBOX = os.getenv(\"FSAPI_SANDBOX\")\n    FSAPI = FSAPI_PROD if FSAPI_PROD else FSAPI_SANDBOX\n\n    if not FSAPI:\n        raise Exception(\"Neither FSAPI_PROD nor FSAPI_SANDBOX is set\")\n\n    if FSAPI_PROD:\n        url = f\"https://aenetworks.freshservice.com/api/v2/tickets{ticket_id}\"\n    elif FSAPI_SANDBOX:   \n        url = f\"https://aenetworks-fs-sandbox.freshservice.com/api/v2/tickets{ticket_id}\"\n\n    payload = {\n        \"status\": 4,    \n        \"Agents\": 3,       \n        \"custom_fields\": {\n          \"close_code\": \"No Action Taken\",\n          \"resolution_notes\": \"Test ticket for kubiya. Hence resolving the ticket\"  # You may need to adjust this value based on your allowed close codes\n         }\n    }\n\n    response = requests.put(url, headers={\"Content-Type\": \"application/json\"}, auth=(FSAPI, \"X\"), data=json.dumps(payload))\n    \n    print(f\"Response status code: {response.status_code}\")\n    print(f\"Response content: {response.text}\")\n\n    if response.status_code == 200:\n        try:\n            return response.json()[\"ticket\"][\"id\"]\n        except json.JSONDecodeError:\n            print(\"Failed to parse JSON response\")\n            return None\n    else:\n        print(f\"Failed to update ticket {ticket_id}. Status code: {response.status_code}\")\n        return None\n\ndef create_meeting(access_token):\n    url = \"https://graph.microsoft.com/v1.0/users/d69debf1-af1f-493f-8837-35747e55ea0f/onlineMeetings\"\n    start_time = datetime.utcnow()\n    end_time = start_time + timedelta(hours=1)\n    payload = {\n        \"startDateTime\": start_time.isoformat() + \"Z\",\n        \"endDateTime\": end_time.isoformat() + \"Z\"\n    }\n    headers = {\n        \"Authorization\": f\"Bearer {access_token}\",\n        \"Content-Type\": \"application/json\"\n    }\n    response = requests.post(url, headers=headers, data=json.dumps(payload))\n    response.raise_for_status()\n    return response.json()[\"joinUrl\"]\n\ndef get_slack_user_id(email):\n    SLACK_API_TOKEN = _get_or_raise_env_var(\"SLACK_API_TOKEN\")\n    \n    url = \"https://slack.com/api/users.lookupByEmail\"\n    headers = {\n        \"Authorization\": f\"Bearer {SLACK_API_TOKEN}\",\n        \"Content-Type\": \"application/x-www-form-urlencoded\"\n    }\n    params = {\"email\": email}\n    response = requests.get(url, headers=headers, params=params)\n    response_data = response.json()\n\n    if response_data[\"ok\"]:\n        return response_data[\"user\"][\"id\"]\n    else:\n        print(f\"Error fetching user ID for {email}: {response_data['error']}\")\n        return None\n\ndef send_slack_message(channel, message):\n    SLACK_API_TOKEN = _get_or_raise_env_var(\"SLACK_API_TOKEN\")\n    \n    url = \"https://slack.com/api/chat.postMessage\"\n    headers = {\n        \"Content-Type\": \"application/json\",\n        \"Authorization\": f\"Bearer {SLACK_API_TOKEN}\"\n    }\n    payload = {\n        \"channel\": channel,\n        \"text\": message\n    }\n    response = requests.post(url, headers=headers, data=json.dumps(payload))\n    response.raise_for_status()\n\ndef main():\n    parser = argparse.ArgumentParser(description=\"Trigger a major incident communication\")\n    parser.add_argument(\"--description\", required=True, help=\"The description of the incident\")\n    parser.add_argument(\"--business_impact\", required=True, help=\"The business impact of the incident\")\n    args = parser.parse_args()\n\n    description = args.description\n    business_impact = args.business_impact\n        \n    FSAPI_PROD = os.getenv(\"FSAPI_PROD\")\n    FSAPI_SANDBOX = os.getenv(\"FSAPI_SANDBOX\")\n\n    reporter = _get_or_raise_env_var(\"KUBIYA_USER_EMAIL\")\n    access_token = get_access_token()\n    escalation_policy_id = _get_or_raise_env_var(\"PD_ESCALATION_POLICY_ID\")\n    incident_commander = get_oncall_engineer(escalation_policy_id)\n    pd_incident_id = create_pd_incident(description)\n    ticket_id = create_ticket(description, business_impact, pd_incident_id, incident_commander)\n\n    if FSAPI_PROD:\n        ticket_url = f\"https://aenetworks.freshservice.com/a/tickets/{ticket_id}\"\n    elif FSAPI_SANDBOX:\n        ticket_url = f\"https://aenetworks-fs-sandbox.freshservice.com/a/tickets/{ticket_id}\"\n\n    meeting_link = create_meeting(access_token)\n    \n    # Fetch Slack user ID for the reporter\n    print(f\"Fetching Slack user ID for email: {reporter}\")\n    reporter_user_id = get_slack_user_id(reporter)\n    reporter_mention = f\"<@{reporter_user_id}>\" if reporter_user_id else reporter\n\n    # Channel ID for #incident_response (replace with actual ID)\n    channel_id = _get_or_raise_env_var(\"INCIDENT_RESPONSE_CHANNEL_ID\")\n\n    if FSAPI_PROD:\n        message = (\n            \"************** SEV 1 ****************\\n\"\n            \"<@U04JCDSHS76> <@U04J2MTMRFD> <@U04FZPQSY3H> <@U048QRBV2NA> <@U04UKPX585S> <@U02SSCGCQQ6>\\n\"\n            f\"Incident Commander: {incident_commander}\\n\"\n            f\"Description: {description}\\n\"\n            f\"Business Impact: {business_impact}\\n\"\n            f\"Bridge Link: <{meeting_link}|Bridge Link>\\n\"\n            f\"PagerDuty Incident URL: https://aetnd.pagerduty.com/incidents/{pd_incident_id}\\n\"\n            f\"FS Ticket URL: {ticket_url}\\n\"\n            f\"Reported by: {reporter_mention}\\n\"\n            \"We will keep everyone posted on this channel as we assess the issue further.\"\n        )\n    elif FSAPI_SANDBOX:\n        message = (\n            \"************** THIS IS A TEST -- DISREGARD ****************\\n\"\n            \"@Jeff McGrath @Kevin Keeler @Tapan Shah @Neeraj Mendiratta @John Dispirito @Sebastian Marjanovic\\n\"\n            f\"Incident Commander: {incident_commander}\\n\"\n            f\"Description: {description}\\n\"\n            f\"Business Impact: {business_impact}\\n\"\n            f\"Bridge Link: <{meeting_link}|Bridge Link>\\n\"\n            f\"PagerDuty Incident URL: https://aetnd.pagerduty.com/incidents/{pd_incident_id}\\n\"\n            f\"FS Ticket URL: {ticket_url}\\n\"\n            f\"Reported by: {reporter_mention}\\n\"\n            \"We will keep everyone posted on this channel as we assess the issue further.\"\n        )\n    send_slack_message(channel_id, message.strip())\n\n    channel_name = _get_or_raise_env_var(\"INCIDENT_RESPONSE_CHANNEL_NAME\")\n    print(f\"Please go to the <#{channel_id}|{channel_name}> channel to find the SEV1 announcement. The bridge line and pertinent details have been posted there. Thank you.\")\n    \n    if FSAPI_SANDBOX:\n        time.sleep(60)\n        close_pd_incident(pd_incident_id)\n        close_ticket(ticket_id)\n    else:\n        print(\"This is a production environment, so we will not close the incident or ticket.\")\n\nif __name__ == \"__main__\":\n    main()\n"
+        }
+      ],
+      "with_services": [],
+      "with_git_repo": null,
+      "with_volumes": [],
+      "entrypoint": [],
+      "icon_url": null,
+      "image": "python:3.11-bullseye",
+      "long_running": false,
+      "on_start": null,
+      "on_build": null,
+      "on_complete": null,
+      "mermaid": "graph TD\n    %% Styles\n    classDef triggerClass fill:#3498db,color:#fff,stroke:#2980b9,stroke-width:2px,font-weight:bold\n    classDef paramClass fill:#2ecc71,color:#fff,stroke:#27ae60,stroke-width:2px\n    classDef execClass fill:#e74c3c,color:#fff,stroke:#c0392b,stroke-width:2px,font-weight:bold\n    classDef envClass fill:#f39c12,color:#fff,stroke:#f1c40f,stroke-width:2px\n\n    %% Main Components\n    Trigger(\"Trigger\"):::triggerClass\n    Params(\"Parameters\"):::paramClass\n    Exec(\"trigger-major-incident-communication\"):::execClass\n    Env(\"Environment\"):::envClass\n\n    %% Flow\n    Trigger --> Params --> Exec\n    Env --> Exec\n\n    %% Trigger Options\n    User(\"User\")\n    API(\"API\")\n    Webhook(\"Webhook\")\n    Cron(\"Scheduled\")\n    User --> Trigger\n    API --> Trigger\n    Webhook --> Trigger\n    Cron --> Trigger\n\n    %% Parameters\n    subgraph Parameters[\"Parameters\"]\n        direction TB\n        Param0(\"description (Required)<br/>The description of the incident for the on-call engineer. You must confirm the values before triggering a major incident.\"):::paramClass\n        Param1(\"business_impact (Required)<br/>The business impact of the incident. You must confirm the values before triggering a major incident.\"):::paramClass\n    end\n    Parameters --- Params\n\n    %% Execution\n    subgraph Execution[\"Execution\"]\n        direction TB\n        Code(\"Script: <br/>pip install requests==2.32.3 > /dev/null 2>&1<br/><br/>ec...\")\n        Type(\"Type: Docker\")\n        Image(\"Docker Image: python:3.11-bullseye\")\n    end\n    Execution --- Exec\n\n    %% Environment\n    subgraph Environment[\"Environment\"]\n        direction TB\n        EnvVars(\"Environment Variables:<br/>PD_SERVICE_ID<br/>PD_ESCALATION_POLICY_ID<br/>KUBIYA_USER_EMAIL<br/>INCIDENT_RESPONSE_CHANNEL_ID\"):::envClass\n        Secrets(\"Secrets:<br/>PD_API_KEY<br/>AZURE_TENANT_ID<br/>AZURE_CLIENT_ID<br/>AZURE_CLIENT_SECRET<br/>FSAPI_SANDBOX<br/>SLACK_API_TOKEN\"):::envClass\n    end\n    Environment --- Env\n\n    %% Context Note\n    ContextNote(\"Parameter values can be<br/>fetched from context<br/>based on the trigger\")\n    ContextNote -.-> Params",
+      "workflow": false,
+      "metadata": {}
+    }
+  ],
+  "errors": [],
+  "python_bundle_version": "3.13.0"
+}
