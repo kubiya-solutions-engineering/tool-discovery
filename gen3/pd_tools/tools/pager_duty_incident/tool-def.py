@@ -3,26 +3,7 @@ import inspect
 from kubiya_sdk import tool_registry
 from kubiya_sdk.tools.models import Arg, Tool, FileSpec
 
-from . import fake_tool, webhook_incident_response, page_oncall_engineer, trigger_major_incident
-
-fake_tool = Tool(
-    name="fake-tool",
-    description="This is a fake tool",
-    type="docker",
-    image="python:3.11-bullseye",
-    args=[],
-    secrets=[],
-    env=[],
-    content="""
-    python /tmp/fake_tool.py
-    """,
-    with_files=[
-        FileSpec(
-            destination="/tmp/fake_tool.py",
-            content=inspect.getsource(fake_tool),
-        ),
-    ]
-)
+from . import webhook_incident_response, page_oncall_engineer, trigger_major_incident
 
 webhook_incident_response_tool = Tool(
     name="webhook-incident-response",
@@ -180,7 +161,6 @@ python /tmp/trigger_major_incident.py --description "$description" --business_im
     ]
 )
 
-tool_registry.register("aedm", fake_tool)
 tool_registry.register("aedm", webhook_incident_response_tool)
 tool_registry.register("aedm", page_oncall_engineer_tool)
 tool_registry.register("aedm", trigger_major_incident_communication_tool)
